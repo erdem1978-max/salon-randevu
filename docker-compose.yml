@@ -1,0 +1,15 @@
+services:
+  salon:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - TZ=Europe/Istanbul
+      - TIMEZONE=${TIMEZONE:-Europe/Istanbul}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WHATSAPP_FROM=${TWILIO_WHATSAPP_FROM}
+      - BASE_URL=${BASE_URL:-http://localhost:8000}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

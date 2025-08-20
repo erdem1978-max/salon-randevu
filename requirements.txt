@@ -1,0 +1,9 @@
+Flask==3.0.3
+SQLAlchemy==2.0.31
+APScheduler==3.10.4
+python-dotenv==1.0.1
+pytz==2024.1
+twilio==9.3.1
+tzdata==2024.1
+
+gunicorn==21.2.0
