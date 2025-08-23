@@ -21,8 +21,9 @@ DB_URL = f"sqlite:///{os.path.join(DB_DIR, 'salon.db')}"
 SERVICES = [
     "Lazer epilasyon", "Kirpik", "Tırnak", "Manikür", "Pedikür",
     "Nail art", "Sigara bırakma", "İştah kapatma", "Botox",
-    "Dolgu", "Dövme silme", "Kaş"
+    "Dolgu", "Dövme silme", "Kaş", "Cilt bakımı"
 ]
+
 
 EMPLOYEE_NAMES = ["Merve", "Zeynep", "İrem", "X"]
 SLOT_MINUTES = 60
