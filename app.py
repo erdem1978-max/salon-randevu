@@ -309,84 +309,68 @@ INDEX_HTML = r"""
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://unpkg.com/hyperscript.org@0.9.12"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Mini UX Paketi: büyük dokunmatik alan + hafif hover + yazdırma -->
-  <style>
-    .calendar button { min-height: 44px; border-radius: 12px; transition: .2s ease; }
-    .calendar .slot-empty:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); }
-    .calendar .slot-full:hover  { filter: brightness(.98); }
-    .calendar tbody tr:hover td { background: #fafafa; }
-    @media print {
-      header, .mobile-nav, .toolbar { display: none !important; }
-      body { background: #fff; }
-      .calendar { box-shadow: none !important; border: 0 !important; }
-      table { font-size: 12px; }
-    }
-  </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
-  <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-4">
-
-    <!-- Başlık + Hafta gezinme + Tarihe git + Yazdır -->
-    <header class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-4 sm:p-5">
+<body class="bg-gradient-to-b from-rose-50 to-white text-gray-900 min-h-screen">
+  <header class="bg-gradient-to-r from-rose-500 via-fuchsia-500 to-violet-500 text-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
       <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">Randevu Takvimi</h1>
-          <p class="text-sm text-slate-600">
-            Dolu:
-            <span class="inline-block w-3 h-3 bg-red-500 align-middle rounded-sm"></span>
+          <h1 class="text-3xl font-extrabold tracking-tight drop-shadow">Güzellik Merkezi Randevu Sistemi</h1>
+          <p class="text-sm/6 text-white/90">
+            Haftalık görünüm • Dolu:
+            <span class="inline-block w-3 h-3 bg-red-500 rounded-sm align-middle"></span>
             • Boş:
-            <span class="inline-block w-3 h-3 bg-white border border-slate-300 align-middle rounded-sm"></span>
+            <span class="inline-block w-3 h-3 bg-white/90 border border-white/50 rounded-sm align-middle"></span>
           </p>
         </div>
-
-        <div class="flex items-center gap-2">
-          <nav class="flex items-center gap-2">
-            <a class="px-3 py-2 rounded-xl bg-white ring-1 ring-slate-300 hover:bg-slate-50 transition" href="?week_start={{ prev_w }}">◀ Önceki</a>
-            <a class="px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-black transition" href="?week_start={{ this_w }}">Bugün</a>
-            <a class="px-3 py-2 rounded-xl bg-white ring-1 ring-slate-300 hover:bg-slate-50 transition" href="?week_start={{ next_w }}">Sonraki ▶</a>
-          </nav>
-
-          <!-- Araç çubuğu: Tarih seç → haftaya atla + Yazdır -->
-          <div class="toolbar flex items-center gap-2">
-            <input id="jumpDate" type="date" class="px-2 py-2 rounded-xl ring-1 ring-slate-300 bg-white text-sm" />
-            <button onclick="window.print()" class="px-3 py-2 rounded-xl bg-white ring-1 ring-slate-300 hover:bg-slate-50 text-sm">Yazdır</button>
-          </div>
-        </div>
+        <nav class="flex items-center gap-2">
+          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
+             href="?week_start={{ prev_w }}">◀ Önceki</a>
+          <a class="px-3 py-2 rounded-xl bg-white text-rose-700 font-semibold hover:bg-rose-50 border border-white/0 transition"
+             href="?week_start={{ this_w }}">Bugün</a>
+          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
+             href="?week_start={{ next_w }}">Sonraki ▶</a>
+        </nav>
       </div>
+    </div>
+  </header>
 
-      <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
-        <div class="flex items-center gap-2">
-          <span class="font-semibold text-slate-700">Çalışanlar:</span>
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+    {% set emp_colors = ['bg-rose-500','bg-violet-500','bg-emerald-500','bg-amber-500'] %}
+
+    <section class="bg-white/80 backdrop-blur rounded-2xl shadow-lg ring-1 ring-black/5 p-4">
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div class="text-sm text-gray-700 flex items-center gap-3">
+          <span class="font-semibold">Çalışanlar:</span>
           {% for e in employees %}
-            <span class="inline-flex items-center gap-2 bg-slate-100 text-slate-800 px-2 py-1 rounded-xl ring-1 ring-slate-200">
-              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-300 text-[11px] font-semibold">{{ e.name[0] }}</span>
-              {{ e.name }}
+            <span class="inline-flex items-center gap-1 text-gray-800">
+              <span class="w-2.5 h-2.5 rounded-full {{ emp_colors[loop.index0 % 4] }}"></span>
+              <span class="font-medium">{{ e.name }}</span>
             </span>
           {% endfor %}
         </div>
-        <div class="text-slate-600">
-          <span class="font-semibold text-slate-700">Hizmetler:</span> {{ ", ".join(services) }}
+        <div class="text-sm text-gray-700 flex-1">
+          <span class="font-semibold">Hizmetler:</span>
+          <span class="text-gray-600">{{ ", ".join(services) }}</span>
         </div>
       </div>
-    </header>
+    </section>
 
-    <!-- Takvim -->
-    <section class="calendar bg-white rounded-2xl shadow-xl ring-1 ring-slate-200 overflow-x-auto">
+    <section class="bg-white rounded-2xl shadow-xl ring-1 ring-black/5 overflow-x-auto">
       <table class="min-w-full text-sm">
-        <thead class="sticky top-0 bg-white/90 backdrop-blur z-10 border-b border-slate-200">
+        <thead class="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
           <tr>
-            <th class="p-3 text-left w-24 font-semibold text-slate-700">Saat</th>
+            <th class="p-3 text-left w-24 font-semibold text-gray-700">Saat</th>
             {% for d in days %}
-              <th class="p-3 text-center min-w-[220px] font-semibold text-slate-800">
+              <th class="p-3 text-center min-w-[220px] font-semibold text-gray-800">
                 <div>{{ TR_DAYS[loop.index0] }}</div>
-                <div class="text-xs text-slate-500 font-normal">{{ d.strftime('%d.%m.%Y') }}</div>
+                <div class="text-xs text-gray-500 font-normal">{{ d.strftime('%d.%m.%Y') }}</div>
                 {% if d.weekday() == 6 %}<div class="text-xs text-rose-600 font-semibold mt-1">Kapalı</div>{% endif %}
               </th>
             {% endfor %}
           </tr>
         </thead>
-        <tbody class="[&_tr:nth-child(odd)]:bg-slate-50/50">
+        <tbody class="[&_tr:nth-child(odd)]:bg-gray-50/40">
           {% set all_labels = [] %}
           {% for d in days %}
             {% for s in day_slots[d] %}
@@ -396,24 +380,25 @@ INDEX_HTML = r"""
 
           {% for label in all_labels %}
             <tr class="align-top">
-              <th class="p-3 font-semibold text-slate-700 sticky left-0 bg-inherit ring-1 ring-slate-200">{{ label }}</th>
+              <th class="p-3 font-semibold text-gray-700 sticky left-0 bg-inherit">{{ label }}</th>
               {% for d in days %}
                 <td class="p-2">
                   {% if d.weekday() == 6 %}
-                    <div class="text-center text-xs text-slate-400 py-8">Kapalı</div>
+                    <div class="text-center text-xs text-gray-400 py-8">Kapalı</div>
                   {% else %}
                     <div class="grid grid-cols-1 gap-1">
                       {% for e in employees %}
                         {% set slot_dt = (d.strftime('%Y-%m-%d') + ' ' + label) %}
                         {% set a = appt_map.get((e.id, slot_dt)) %}
+                        {% set dot = emp_colors[loop.index0 % 4] %}
                         {% if a %}
                           <button
-                            class="slot-full w-full text-left p-2.5 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 text-white hover:opacity-95 shadow-sm transition"
+                            class="w-full text-left p-2.5 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 text-white hover:opacity-95 shadow-sm transition"
                             hx-get="/slot?date={{ d.strftime('%Y-%m-%d') }}&time={{ label }}&employee_id={{ e.id }}"
                             hx-target="#modal" hx-swap="innerHTML">
                             <div class="flex items-center justify-between">
                               <div class="flex items-center gap-2">
-                                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/25 text-[11px] font-semibold">{{ e.name[0] }}</span>
+                                <span class="w-2 h-2 rounded-full {{ dot }}"></span>
                                 <span class="font-semibold">{{ e.name }}</span>
                               </div>
                               <span class="text-[10px] uppercase tracking-wide bg-white/20 px-2 py-0.5 rounded-full">DOLU</span>
@@ -422,17 +407,17 @@ INDEX_HTML = r"""
                           </button>
                         {% else %}
                           <button
-                            class="slot-empty w-full text-left p-2.5 rounded-xl bg-white border border-slate-200 hover:border-rose-300 hover:shadow-sm transition"
+                            class="w-full text-left p-2.5 rounded-xl bg-white border border-gray-200 hover:border-rose-300 hover:shadow-sm transition"
                             hx-get="/slot?date={{ d.strftime('%Y-%m-%d') }}&time={{ label }}&employee_id={{ e.id }}"
                             hx-target="#modal" hx-swap="innerHTML">
                             <div class="flex items-center justify-between">
                               <div class="flex items-center gap-2">
-                                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-[11px] font-semibold text-slate-700">{{ e.name[0] }}</span>
-                                <span class="font-semibold text-slate-800">{{ e.name }}</span>
+                                <span class="w-2 h-2 rounded-full {{ dot }}"></span>
+                                <span class="font-semibold text-gray-800">{{ e.name }}</span>
                               </div>
-                              <span class="text-[10px] uppercase tracking-wide text-slate-500">BOŞ</span>
+                              <span class="text-[10px] uppercase tracking-wide text-gray-500">BOŞ</span>
                             </div>
-                            <div class="text-xs text-slate-500 mt-1">Randevu ekle</div>
+                            <div class="text-xs text-gray-500 mt-1">Randevu ekle</div>
                           </button>
                         {% endif %}
                       {% endfor %}
@@ -445,44 +430,12 @@ INDEX_HTML = r"""
         </tbody>
       </table>
     </section>
-
-    <!-- Mobil alt gezinme (tek elle kolay) -->
-    <div class="mobile-nav sm:hidden fixed bottom-3 left-1/2 -translate-x-1/2
-                bg-white shadow-lg ring-1 ring-slate-200 rounded-full px-2 py-1
-                flex items-center gap-1">
-      <a href="?week_start={{ prev_w }}"
-         class="px-3 py-2 rounded-full bg-white hover:bg-slate-50 ring-1 ring-slate-200">◀</a>
-      <a href="?week_start={{ this_w }}"
-         class="px-3 py-2 rounded-full bg-slate-900 text-white hover:bg-black">Bugün</a>
-      <a href="?week_start={{ next_w }}"
-         class="px-3 py-2 rounded-full bg-white hover:bg-slate-50 ring-1 ring-slate-200">▶</a>
-    </div>
-
-    <div id="modal"></div>
   </main>
 
-  <!-- Tarihe git: seçileni haftanın Pazartesi gününe çevirip yönlendir -->
-  <script>
-    function toMonday(iso) {
-      if (!iso) return null;
-      const dt = new Date(iso + "T00:00:00");
-      const day = dt.getDay(); // 0=Sun,1=Mon,...6=Sat
-      const diff = (day === 0 ? -6 : 1 - day);
-      dt.setDate(dt.getDate() + diff);
-      const y = dt.getFullYear();
-      const m = String(dt.getMonth()+1).padStart(2,'0');
-      const d = String(dt.getDate()).padStart(2,'0');
-      return `${y}-${m}-${d}`;
-    }
-    document.getElementById('jumpDate')?.addEventListener('change', (e)=>{
-      const ws = toMonday(e.target.value);
-      if (ws) location.search = `?week_start=${ws}`;
-    });
-  </script>
+  <div id="modal"></div>
 </body>
 </html>
 """
-
 
 
 
