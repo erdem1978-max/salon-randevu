@@ -438,6 +438,7 @@ INDEX_HTML = r"""
 """
 
 
+
 SLOT_HTML = r"""
 <div class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me">
   <div class="bg-white/95 w-full max-w-md rounded-2xl shadow-2xl ring-1 ring-black/5 p-5"
@@ -494,6 +495,7 @@ SLOT_HTML = r"""
   </div>
 </div>
 """
+
 
 
 if __name__ == "__main__":
