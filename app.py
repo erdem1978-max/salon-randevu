@@ -310,41 +310,67 @@ INDEX_HTML = r"""
   <script src="https://unpkg.com/hyperscript.org@0.9.12"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-50 text-gray-900">
-  <div class="max-w-full p-4 sm:p-6">
-    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-      <div>
-        <h1 class="text-2xl font-bold">Güzellik Merkezi Randevu Sistemi</h1>
-        <p class="text-sm text-gray-600">Haftalık görünüm • Dolu: <span class="inline-block w-3 h-3 bg-red-500 align-middle"></span> • Boş: <span class="inline-block w-3 h-3 bg-white border align-middle"></span></p>
+<body class="bg-gradient-to-b from-rose-50 to-white text-gray-900 min-h-screen">
+  <header class="bg-gradient-to-r from-rose-500 via-fuchsia-500 to-violet-500 text-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h1 class="text-3xl font-extrabold tracking-tight drop-shadow">Güzellik Merkezi Randevu Sistemi</h1>
+          <p class="text-sm/6 text-white/90">
+            Haftalık görünüm • Dolu:
+            <span class="inline-block w-3 h-3 bg-red-500 rounded-sm align-middle"></span>
+            • Boş:
+            <span class="inline-block w-3 h-3 bg-white/90 border border-white/50 rounded-sm align-middle"></span>
+          </p>
+        </div>
+        <nav class="flex items-center gap-2">
+          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
+             href="?week_start={{ prev_w }}">◀ Önceki</a>
+          <a class="px-3 py-2 rounded-xl bg-white text-rose-700 font-semibold hover:bg-rose-50 border border-white/0 transition"
+             href="?week_start={{ this_w }}">Bugün</a>
+          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
+             href="?week_start={{ next_w }}">Sonraki ▶</a>
+        </nav>
       </div>
-      <nav class="flex items-center gap-2">
-        <a class="px-3 py-2 rounded border bg-white hover:bg-gray-50" href="?week_start={{ prev_w }}">◀ Önceki</a>
-        <a class="px-3 py-2 rounded border bg-white hover:bg-gray-50" href="?week_start={{ this_w }}">Bugün</a>
-        <a class="px-3 py-2 rounded border bg-white hover:bg-gray-50" href="?week_start={{ next_w }}">Sonraki ▶</a>
-      </nav>
-    </header>
+    </div>
+  </header>
 
-    <section class="mb-3">
-      <div class="text-sm text-gray-700">Çalışanlar: {% for e in employees %}<span class="mr-3 font-medium">{{ e.name }}</span>{% endfor %}</div>
-      <div class="text-sm text-gray-700 mt-1">Hizmetler: {{ ", ".join(services) }}</div>
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+    {% set emp_colors = ['bg-rose-500','bg-violet-500','bg-emerald-500','bg-amber-500'] %}
+
+    <section class="bg-white/80 backdrop-blur rounded-2xl shadow-lg ring-1 ring-black/5 p-4">
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div class="text-sm text-gray-700 flex items-center gap-3">
+          <span class="font-semibold">Çalışanlar:</span>
+          {% for e in employees %}
+            <span class="inline-flex items-center gap-1 text-gray-800">
+              <span class="w-2.5 h-2.5 rounded-full {{ emp_colors[loop.index0 % 4] }}"></span>
+              <span class="font-medium">{{ e.name }}</span>
+            </span>
+          {% endfor %}
+        </div>
+        <div class="text-sm text-gray-700 flex-1">
+          <span class="font-semibold">Hizmetler:</span>
+          <span class="text-gray-600">{{ ", ".join(services) }}</span>
+        </div>
+      </div>
     </section>
 
-    <div class="overflow-x-auto">
-      <table class="min-w-full border border-gray-200 text-sm">
-        <thead class="bg-white sticky top-0 z-10">
+    <section class="bg-white rounded-2xl shadow-xl ring-1 ring-black/5 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
           <tr>
-            <th class="p-2 border-b border-gray-200 text-left w-24">Saat</th>
+            <th class="p-3 text-left w-24 font-semibold text-gray-700">Saat</th>
             {% for d in days %}
-              <th class="p-2 border-b border-gray-200 text-center min-w-[220px]">
-                <div class="font-semibold">{{ TR_DAYS[loop.index0] }}</div>
-                <div class="text-xs text-gray-500">{{ d.strftime('%d.%m.%Y') }}</div>
-                {% if d.weekday() == 6 %}<div class="text-xs text-red-600 font-semibold">Kapalı</div>{% endif %}
+              <th class="p-3 text-center min-w-[220px] font-semibold text-gray-800">
+                <div>{{ TR_DAYS[loop.index0] }}</div>
+                <div class="text-xs text-gray-500 font-normal">{{ d.strftime('%d.%m.%Y') }}</div>
+                {% if d.weekday() == 6 %}<div class="text-xs text-rose-600 font-semibold mt-1">Kapalı</div>{% endif %}
               </th>
             {% endfor %}
           </tr>
         </thead>
-        <tbody>
-          {# Tüm günlerdeki slot saatlerini birleştirerek benzersiz saat listesi çıkar #}
+        <tbody class="[&_tr:nth-child(odd)]:bg-gray-50/40">
           {% set all_labels = [] %}
           {% for d in days %}
             {% for s in day_slots[d] %}
@@ -353,10 +379,10 @@ INDEX_HTML = r"""
           {% endfor %}
 
           {% for label in all_labels %}
-            <tr class="bg-white">
-              <th class="p-2 border-t align-top font-medium">{{ label }}</th>
+            <tr class="align-top">
+              <th class="p-3 font-semibold text-gray-700 sticky left-0 bg-inherit">{{ label }}</th>
               {% for d in days %}
-                <td class="p-1 border-t align-top">
+                <td class="p-2">
                   {% if d.weekday() == 6 %}
                     <div class="text-center text-xs text-gray-400 py-8">Kapalı</div>
                   {% else %}
@@ -364,27 +390,34 @@ INDEX_HTML = r"""
                       {% for e in employees %}
                         {% set slot_dt = (d.strftime('%Y-%m-%d') + ' ' + label) %}
                         {% set a = appt_map.get((e.id, slot_dt)) %}
+                        {% set dot = emp_colors[loop.index0 % 4] %}
                         {% if a %}
                           <button
-                            class="w-full text-left p-2 rounded bg-red-500 text-white hover:opacity-90"
+                            class="w-full text-left p-2.5 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 text-white hover:opacity-95 shadow-sm transition"
                             hx-get="/slot?date={{ d.strftime('%Y-%m-%d') }}&time={{ label }}&employee_id={{ e.id }}"
                             hx-target="#modal" hx-swap="innerHTML">
                             <div class="flex items-center justify-between">
-                              <span class="font-semibold">{{ e.name }}</span>
-                              <span class="text-xs">DOLU</span>
+                              <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full {{ dot }}"></span>
+                                <span class="font-semibold">{{ e.name }}</span>
+                              </div>
+                              <span class="text-[10px] uppercase tracking-wide bg-white/20 px-2 py-0.5 rounded-full">DOLU</span>
                             </div>
-                            <div class="text-xs truncate">{{ a.customer_name }} – {{ a.service }}</div>
+                            <div class="text-xs/5 mt-1 opacity-95 truncate">{{ a.customer_name }} – {{ a.service }}</div>
                           </button>
                         {% else %}
                           <button
-                            class="w-full text-left p-2 rounded bg-white border hover:bg-gray-50"
+                            class="w-full text-left p-2.5 rounded-xl bg-white border border-gray-200 hover:border-rose-300 hover:shadow-sm transition"
                             hx-get="/slot?date={{ d.strftime('%Y-%m-%d') }}&time={{ label }}&employee_id={{ e.id }}"
                             hx-target="#modal" hx-swap="innerHTML">
                             <div class="flex items-center justify-between">
-                              <span class="font-semibold">{{ e.name }}</span>
-                              <span class="text-xs">BOŞ</span>
+                              <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full {{ dot }}"></span>
+                                <span class="font-semibold text-gray-800">{{ e.name }}</span>
+                              </div>
+                              <span class="text-[10px] uppercase tracking-wide text-gray-500">BOŞ</span>
                             </div>
-                            <div class="text-xs text-gray-500">Randevu ekle</div>
+                            <div class="text-xs text-gray-500 mt-1">Randevu ekle</div>
                           </button>
                         {% endif %}
                       {% endfor %}
@@ -396,68 +429,72 @@ INDEX_HTML = r"""
           {% endfor %}
         </tbody>
       </table>
-    </div>
-  </div>
+    </section>
+  </main>
 
   <div id="modal"></div>
-
-  <template id="modal-shell">
-    <div class="fixed inset-0 bg-black/40 flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me"></div>
-  </template>
 </body>
 </html>
 """
 
+
 SLOT_HTML = r"""
-<div class="fixed inset-0 bg-black/40 flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me">
-  <div class="bg-white w-full max-w-md rounded-xl shadow p-4" _="on keydown[key=='Escape'] from window halt event then remove closest .fixed">
+<div class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me">
+  <div class="bg-white/95 w-full max-w-md rounded-2xl shadow-2xl ring-1 ring-black/5 p-5"
+       _="on keydown[key=='Escape'] from window halt event then remove closest .fixed">
     {% if appt %}
-      <h2 class="text-lg font-semibold mb-2">Randevu Detayı</h2>
-      <dl class="text-sm grid grid-cols-3 gap-2 mb-3">
+      <h2 class="text-lg font-semibold mb-3">Randevu Detayı</h2>
+      <dl class="text-sm grid grid-cols-3 gap-2 mb-4">
         <dt class="text-gray-500">Çalışan</dt><dd class="col-span-2">{{ appt.employee.name }}</dd>
         <dt class="text-gray-500">Tarih/Saat</dt><dd class="col-span-2">{{ appt.start_time.strftime('%d.%m.%Y %H:%M') }}</dd>
         <dt class="text-gray-500">Müşteri</dt><dd class="col-span-2">{{ appt.customer_name }}</dd>
         <dt class="text-gray-500">Telefon</dt><dd class="col-span-2">{{ appt.phone or '-' }}</dd>
-        <dt class="text-gray-500">Hizmet</dt><dd class="col-span-2">{{ appt.service }}</dd>
+        <dt class="text-gray-500">Hizmet</dt>
+        <dd class="col-span-2">
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-rose-100 text-rose-700 border border-rose-200">
+            {{ appt.service }}
+          </span>
+        </dd>
       </dl>
       <div class="flex justify-end gap-2">
-        <button class="px-3 py-2 rounded border" onclick="this.closest('.fixed').remove()">Kapat</button>
+        <button class="px-3 py-2 rounded-xl border hover:bg-gray-50" onclick="this.closest('.fixed').remove()">Kapat</button>
         <form hx-post="/appointments/{{ appt.id }}/delete" hx-target="body" hx-swap="none">
-          <button class="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700">Sil</button>
+          <button class="px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 shadow-sm">Sil</button>
         </form>
       </div>
     {% else %}
-      <h2 class="text-lg font-semibold mb-2">Yeni Randevu</h2>
+      <h2 class="text-lg font-semibold mb-3">Yeni Randevu</h2>
       <form class="space-y-3" hx-post="/appointments" hx-target="body" hx-swap="none">
         <input type="hidden" name="employee_id" value="{{ emp.id }}" />
         <input type="hidden" name="date" value="{{ dt.strftime('%Y-%m-%d') }}" />
         <input type="hidden" name="time" value="{{ dt.strftime('%H:%M') }}" />
         <div class="text-sm text-gray-600">{{ emp.name }} – {{ dt.strftime('%d.%m.%Y %H:%M') }}</div>
         <div>
-          <label class="block text-sm font-medium">Müşteri Adı Soyadı</label>
-          <input required name="customer_name" class="mt-1 w-full p-2 rounded border" placeholder="Ad Soyad" />
+          <label class="block text-sm font-medium mb-1">Müşteri Adı Soyadı</label>
+          <input required name="customer_name" class="w-full p-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-rose-300" placeholder="Ad Soyad" />
         </div>
         <div>
-          <label class="block text-sm font-medium">Telefon (WhatsApp)</label>
-          <input name="phone" class="mt-1 w-full p-2 rounded border" placeholder="+905331112233" />
+          <label class="block text-sm font-medium mb-1">Telefon (WhatsApp)</label>
+          <input name="phone" class="w-full p-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-rose-300" placeholder="+905331112233" />
           <p class="text-xs text-gray-500 mt-1">E.164 formatı önerilir. Mesajlar randevudan 60 dk önce gönderilir.</p>
         </div>
         <div>
-          <label class="block text-sm font-medium">Hizmet</label>
-          <select required name="service" class="mt-1 w-full p-2 rounded border bg-white">
+          <label class="block text-sm font-medium mb-1">Hizmet</label>
+          <select required name="service" class="w-full p-2.5 rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-300">
             <option value="" disabled selected>Seçiniz</option>
             {% for s in services %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
           </select>
         </div>
         <div class="flex justify-end gap-2 pt-2">
-          <button type="button" class="px-3 py-2 rounded border" onclick="this.closest('.fixed').remove()">Vazgeç</button>
-          <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Kaydet</button>
+          <button type="button" class="px-3 py-2 rounded-xl border hover:bg-gray-50" onclick="this.closest('.fixed').remove()">Vazgeç</button>
+          <button class="px-3 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-fuchsia-600 text-white hover:opacity-95 shadow-sm">Kaydet</button>
         </div>
       </form>
     {% endif %}
   </div>
 </div>
 """
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
