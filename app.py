@@ -24,7 +24,6 @@ SERVICES = [
     "Dolgu", "Dövme silme", "Kaş", "Cilt bakımı"
 ]
 
-
 EMPLOYEE_NAMES = ["Merve", "Zeynep", "İrem", "X"]
 SLOT_MINUTES = 60
 START_TIME = time(9, 0)      # 09:00
@@ -87,19 +86,15 @@ class Slot:
     dt: datetime
     label: str  # "HH:MM"
 
-
 def week_start_for(d: date) -> date:
     # Haftabaşı: Pazartesi
     return d - timedelta(days=(d.weekday()))
 
-
 def parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
-
 def time_to_dt(day: date, t: time) -> datetime:
     return TZ.localize(datetime.combine(day, t))
-
 
 def iter_slots_for_day(day: date) -> list[Slot]:
     """09:00'dan 19:30'a kadar 60 dk slotlar; son özel slot 18:30-19:30."""
@@ -122,10 +117,8 @@ def iter_slots_for_day(day: date) -> list[Slot]:
         return []
     return slots
 
-
 def week_days(start: date) -> list[date]:
     return [start + timedelta(days=i) for i in range(7)]
-
 
 def fetch_week_appointments(ses, week_days_list: list[date]):
     start_dt = TZ.localize(datetime.combine(week_days_list[0], time(0,0)))
@@ -133,7 +126,6 @@ def fetch_week_appointments(ses, week_days_list: list[date]):
     items = ses.query(Appointment).filter(Appointment.start_time >= start_dt,
                                          Appointment.start_time <= end_dt).all()
     return items
-
 
 def appt_key(emp_id: int, dt: datetime) -> tuple:
     return (emp_id, dt.strftime("%Y-%m-%d %H:%M"))
@@ -258,7 +250,6 @@ def delete_appointment(appt_id: int):
     return resp
 
 # -------------------- Scheduler --------------------
-
 def send_whatsapp_reminders():
     if not TWILIO_ENABLED:
         # Kurulum yapılmadıysa sessizce çık (geliştirme için konsola yazılabilir)
@@ -324,7 +315,7 @@ INDEX_HTML = r"""
           </p>
         </div>
         <nav class="flex items-center gap-2">
-          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
+          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg白/25 border border-white/20 backdrop-blur transition"
              href="?week_start={{ prev_w }}">◀ Önceki</a>
           <a class="px-3 py-2 rounded-xl bg-white text-rose-700 font-semibold hover:bg-rose-50 border border-white/0 transition"
              href="?week_start={{ this_w }}">Bugün</a>
@@ -437,7 +428,6 @@ INDEX_HTML = r"""
 </html>
 """
 
-
 SLOT_HTML = r"""
 <div class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me">
   <div class="bg-white/95 w-full max-w-md rounded-2xl shadow-2xl ring-1 ring-black/5 p-5"
@@ -494,7 +484,6 @@ SLOT_HTML = r"""
   </div>
 </div>
 """
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
