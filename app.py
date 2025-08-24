@@ -2,7 +2,8 @@ import os
 from datetime import datetime, date, time, timedelta
 from dataclasses import dataclass
 
-from flask import Flask, request, url_for, make_response, render_template_string, abort
+from flask import Flask, request, redirect, url_for, make_response
+from flask import render_template_string, abort
 from sqlalchemy import (create_engine, Column, Integer, String, DateTime, Boolean,
                         ForeignKey, UniqueConstraint)
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, scoped_session
@@ -22,6 +23,7 @@ SERVICES = [
     "Nail art", "Sigara bırakma", "İştah kapatma", "Botox",
     "Dolgu", "Dövme silme", "Kaş", "Cilt bakımı"
 ]
+
 
 EMPLOYEE_NAMES = ["Merve", "Zeynep", "İrem", "X"]
 SLOT_MINUTES = 60
@@ -59,7 +61,7 @@ class Appointment(Base):
 
 Base.metadata.create_all(engine)
 
-# İlk çalışanları ekle (varsa atla)
+# Seed employees
 with Session() as s:
     existing = {e.name for e in s.query(Employee).all()}
     for n in EMPLOYEE_NAMES:
@@ -67,7 +69,7 @@ with Session() as s:
             s.add(Employee(name=n))
     s.commit()
 
-# -------------------- WhatsApp (opsiyonel; ayar yoksa pasif) --------------------
+# -------------------- WhatsApp --------------------
 TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM = os.getenv("TWILIO_WHATSAPP_FROM")  # örn: whatsapp:+14155238886
@@ -77,11 +79,6 @@ client = Client(TWILIO_SID, TWILIO_TOKEN) if TWILIO_ENABLED else None
 # -------------------- Flask --------------------
 app = Flask(__name__)
 
-# Basit sağlık kontrolü (Render’da canlı mı?)
-@app.get("/healthz")
-def healthz():
-    return "ok", 200
-
 # -------------------- Yardımcılar --------------------
 TR_DAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
@@ -90,37 +87,53 @@ class Slot:
     dt: datetime
     label: str  # "HH:MM"
 
+
 def week_start_for(d: date) -> date:
-    return d - timedelta(days=(d.weekday()))  # Pazartesi
+    # Haftabaşı: Pazartesi
+    return d - timedelta(days=(d.weekday()))
+
 
 def parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
+
+
+def time_to_dt(day: date, t: time) -> datetime:
+    return TZ.localize(datetime.combine(day, t))
+
 
 def iter_slots_for_day(day: date) -> list[Slot]:
     """09:00'dan 19:30'a kadar 60 dk slotlar; son özel slot 18:30-19:30."""
     slots = []
     cur = datetime.combine(day, START_TIME)
     end_dt = datetime.combine(day, END_TIME)
+    # 60 dakikalık adımlarla 18:00'a kadar ilerle
     while cur + timedelta(minutes=SLOT_MINUTES) <= end_dt:
         slots.append(Slot(dt=TZ.localize(cur), label=cur.strftime("%H:%M")))
         cur += timedelta(minutes=SLOT_MINUTES)
+    # Özel: 18:30 slotu (eğer henüz eklenmediyse ve gün cumartesi/haftaiçi ise)
     special = datetime.combine(day, time(18, 30))
     special_dt = TZ.localize(special)
     if all(s.dt.time() != time(18,30) for s in slots) and special_dt + timedelta(minutes=60) <= TZ.localize(end_dt):
-        if day.weekday() != 6:  # Pazar hariç
+        # Pazar hariç günler için ekle
+        if day.weekday() != 6:
             slots.append(Slot(dt=special_dt, label=special.strftime("%H:%M")))
-    if day.weekday() == 6:     # Pazar kapalı
+    # Pazar (kapalı): slot listesi boş kalsın
+    if day.weekday() == 6:
         return []
     return slots
+
 
 def week_days(start: date) -> list[date]:
     return [start + timedelta(days=i) for i in range(7)]
 
+
 def fetch_week_appointments(ses, week_days_list: list[date]):
     start_dt = TZ.localize(datetime.combine(week_days_list[0], time(0,0)))
     end_dt = TZ.localize(datetime.combine(week_days_list[-1], time(23,59)))
-    return ses.query(Appointment).filter(Appointment.start_time >= start_dt,
+    items = ses.query(Appointment).filter(Appointment.start_time >= start_dt,
                                          Appointment.start_time <= end_dt).all()
+    return items
+
 
 def appt_key(emp_id: int, dt: datetime) -> tuple:
     return (emp_id, dt.strftime("%Y-%m-%d %H:%M"))
@@ -131,13 +144,18 @@ def index():
     with Session() as s:
         today = datetime.now(TZ).date()
         ws_param = request.args.get("week_start")
-        ws = parse_date(ws_param) if ws_param else week_start_for(today)
+        if ws_param:
+            ws = parse_date(ws_param)
+        else:
+            ws = week_start_for(today)
         days = week_days(ws)
         employees = s.query(Employee).order_by(Employee.id).all()
 
-        # Haftanın randevuları
+        # Tüm randevuları map'le
         appointments = fetch_week_appointments(s, days)
-        appt_map = {appt_key(a.employee_id, a.start_time): a for a in appointments}
+        appt_map = {}
+        for a in appointments:
+            appt_map[appt_key(a.employee_id, a.start_time)] = a
 
         # Slot matrisi
         day_slots = {d: iter_slots_for_day(d) for d in days}
@@ -168,6 +186,7 @@ def slot_modal():
         abort(400)
     day = parse_date(date_str)
     dt = TZ.localize(datetime.combine(day, datetime.strptime(time_str, "%H:%M").time()))
+
     with Session() as s:
         emp = s.get(Employee, emp_id)
         if not emp:
@@ -218,7 +237,7 @@ def create_appointment():
         s.add(appt)
         s.commit()
 
-    # Aynı haftayı tazele
+    # HX-Redirect ile sayfayı aynı haftaya tazele
     ws = week_start_for(day).strftime("%Y-%m-%d")
     resp = make_response("", 204)
     resp.headers["HX-Redirect"] = url_for("index", week_start=ws)
@@ -238,9 +257,11 @@ def delete_appointment(appt_id: int):
     resp.headers["HX-Redirect"] = url_for("index", week_start=ws)
     return resp
 
-# -------------------- (Opsiyonel) Zamanlayıcı: Twilio kuruluysa çalışır --------------------
+# -------------------- Scheduler --------------------
+
 def send_whatsapp_reminders():
     if not TWILIO_ENABLED:
+        # Kurulum yapılmadıysa sessizce çık (geliştirme için konsola yazılabilir)
         return
     now = datetime.now(TZ)
     window_start = now + timedelta(minutes=60)
@@ -255,10 +276,12 @@ def send_whatsapp_reminders():
         )
         for a in upcoming:
             if not a.phone:
-                a.reminder_sent = True
+                a.reminder_sent = True  # numara yoksa atla ama tekrar denememek için işaretle
                 continue
             try:
-                to = a.phone if str(a.phone).startswith("whatsapp:") else f"whatsapp:{a.phone}"
+                to = a.phone
+                if not to.startswith("whatsapp:"):
+                    to = f"whatsapp:{to}"
                 body = (
                     f"Merhaba {a.customer_name},\n"
                     f"{a.start_time.strftime('%d.%m.%Y %H:%M')} saatindeki '{a.service}' randevunuzu hatırlatırız.\n"
@@ -267,6 +290,7 @@ def send_whatsapp_reminders():
                 client.messages.create(from_=TWILIO_FROM, to=to, body=body)
                 a.reminder_sent = True
             except Exception as e:
+                # Hata olursa tekrar denemek için işaretlemeyi kaldırma (log atılabilir)
                 print("WhatsApp gönderim hatası:", e)
         s.commit()
 
@@ -286,69 +310,41 @@ INDEX_HTML = r"""
   <script src="https://unpkg.com/hyperscript.org@0.9.12"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gradient-to-b from-rose-50 to-white text-gray-900 min-h-screen">
-  <header class="bg-gradient-to-r from-rose-500 via-fuchsia-500 to-violet-500 text-white">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-extrabold tracking-tight drop-shadow">Güzellik Merkezi Randevu Sistemi</h1>
-          <p class="text-sm/6 text-white/90">
-            Haftalık görünüm • Dolu:
-            <span class="inline-block w-3 h-3 bg-red-500 rounded-sm align-middle"></span>
-            • Boş:
-            <span class="inline-block w-3 h-3 bg-white/90 border border-white/50 rounded-sm align-middle"></span>
-          </p>
-        </div>
-        <nav class="flex items-center gap-2">
-          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
-             href="?week_start={{ prev_w }}">◀ Önceki</a>
-          <a class="px-3 py-2 rounded-xl bg-white text-rose-700 font-semibold hover:bg-rose-50 border border-white/0 transition"
-             href="?week_start={{ this_w }}">Bugün</a>
-          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
-             href="?week_start={{ next_w }}">Sonraki ▶</a>
-        </nav>
+<body class="bg-gray-50 text-gray-900">
+  <div class="max-w-full p-4 sm:p-6">
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      <div>
+        <h1 class="text-2xl font-bold">Güzellik Merkezi Randevu Sistemi</h1>
+        <p class="text-sm text-gray-600">Haftalık görünüm • Dolu: <span class="inline-block w-3 h-3 bg-red-500 align-middle"></span> • Boş: <span class="inline-block w-3 h-3 bg-white border align-middle"></span></p>
       </div>
-    </div>
-  </header>
+      <nav class="flex items-center gap-2">
+        <a class="px-3 py-2 rounded border bg-white hover:bg-gray-50" href="?week_start={{ prev_w }}">◀ Önceki</a>
+        <a class="px-3 py-2 rounded border bg-white hover:bg-gray-50" href="?week_start={{ this_w }}">Bugün</a>
+        <a class="px-3 py-2 rounded border bg-white hover:bg-gray-50" href="?week_start={{ next_w }}">Sonraki ▶</a>
+      </nav>
+    </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
-    {% set emp_colors = ['bg-rose-500','bg-violet-500','bg-emerald-500','bg-amber-500'] %}
-
-    <!-- Üst bilgi kartı -->
-    <section class="bg-white/80 backdrop-blur rounded-2xl shadow-lg ring-1 ring-black/5 p-4">
-      <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <div class="text-sm text-gray-700 flex items-center gap-3">
-          <span class="font-semibold">Çalışanlar:</span>
-          {% for e in employees %}
-            <span class="inline-flex items-center gap-1 text-gray-800">
-              <span class="w-2.5 h-2.5 rounded-full {{ emp_colors[loop.index0 % 4] }}"></span>
-              <span class="font-medium">{{ e.name }}</span>
-            </span>
-          {% endfor %}
-        </div>
-        <div class="text-sm text-gray-700 flex-1">
-          <span class="font-semibold">Hizmetler:</span>
-          <span class="text-gray-600">{{ ", ".join(services) }}</span>
-        </div>
-      </div>
+    <section class="mb-3">
+      <div class="text-sm text-gray-700">Çalışanlar: {% for e in employees %}<span class="mr-3 font-medium">{{ e.name }}</span>{% endfor %}</div>
+      <div class="text-sm text-gray-700 mt-1">Hizmetler: {{ ", ".join(services) }}</div>
     </section>
 
-    <!-- Takvim -->
-    <section class="bg-white rounded-2xl shadow-xl ring-1 ring-black/5 overflow-x-auto">
-      <table class="min-w-full text-sm">
-        <thead class="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
+    <div class="overflow-x-auto">
+      <table class="min-w-full border border-gray-200 text-sm">
+        <thead class="bg-white sticky top-0 z-10">
           <tr>
-            <th class="p-3 text-left w-24 font-semibold text-gray-700">Saat</th>
+            <th class="p-2 border-b border-gray-200 text-left w-24">Saat</th>
             {% for d in days %}
-              <th class="p-3 text-center min-w-[220px] font-semibold text-gray-800">
-                <div>{{ TR_DAYS[loop.index0] }}</div>
-                <div class="text-xs text-gray-500 font-normal">{{ d.strftime('%d.%m.%Y') }}</div>
-                {% if d.weekday() == 6 %}<div class="text-xs text-rose-600 font-semibold mt-1">Kapalı</div>{% endif %}
+              <th class="p-2 border-b border-gray-200 text-center min-w-[220px]">
+                <div class="font-semibold">{{ TR_DAYS[loop.index0] }}</div>
+                <div class="text-xs text-gray-500">{{ d.strftime('%d.%m.%Y') }}</div>
+                {% if d.weekday() == 6 %}<div class="text-xs text-red-600 font-semibold">Kapalı</div>{% endif %}
               </th>
             {% endfor %}
           </tr>
         </thead>
-        <tbody class="[&_tr:nth-child(odd)]:bg-gray-50/40">
+        <tbody>
+          {# Tüm günlerdeki slot saatlerini birleştirerek benzersiz saat listesi çıkar #}
           {% set all_labels = [] %}
           {% for d in days %}
             {% for s in day_slots[d] %}
@@ -357,10 +353,10 @@ INDEX_HTML = r"""
           {% endfor %}
 
           {% for label in all_labels %}
-            <tr class="align-top">
-              <th class="p-3 font-semibold text-gray-700 sticky left-0 bg-inherit">{{ label }}</th>
+            <tr class="bg-white">
+              <th class="p-2 border-t align-top font-medium">{{ label }}</th>
               {% for d in days %}
-                <td class="p-2">
+                <td class="p-1 border-t align-top">
                   {% if d.weekday() == 6 %}
                     <div class="text-center text-xs text-gray-400 py-8">Kapalı</div>
                   {% else %}
@@ -368,34 +364,27 @@ INDEX_HTML = r"""
                       {% for e in employees %}
                         {% set slot_dt = (d.strftime('%Y-%m-%d') + ' ' + label) %}
                         {% set a = appt_map.get((e.id, slot_dt)) %}
-                        {% set dot = emp_colors[loop.index0 % 4] %}
                         {% if a %}
                           <button
-                            class="w-full text-left p-2.5 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 text-white hover:opacity-95 shadow-sm transition"
+                            class="w-full text-left p-2 rounded bg-red-500 text-white hover:opacity-90"
                             hx-get="/slot?date={{ d.strftime('%Y-%m-%d') }}&time={{ label }}&employee_id={{ e.id }}"
                             hx-target="#modal" hx-swap="innerHTML">
                             <div class="flex items-center justify-between">
-                              <div class="flex items-center gap-2">
-                                <span class="w-2 h-2 rounded-full {{ dot }}"></span>
-                                <span class="font-semibold">{{ e.name }}</span>
-                              </div>
-                              <span class="text-[10px] uppercase tracking-wide bg-white/20 px-2 py-0.5 rounded-full">DOLU</span>
+                              <span class="font-semibold">{{ e.name }}</span>
+                              <span class="text-xs">DOLU</span>
                             </div>
-                            <div class="text-xs/5 mt-1 opacity-95 truncate">{{ a.customer_name }} – {{ a.service }}</div>
+                            <div class="text-xs truncate">{{ a.customer_name }} – {{ a.service }}</div>
                           </button>
                         {% else %}
                           <button
-                            class="w-full text-left p-2.5 rounded-xl bg-white border border-gray-200 hover:border-rose-300 hover:shadow-sm transition"
+                            class="w-full text-left p-2 rounded bg-white border hover:bg-gray-50"
                             hx-get="/slot?date={{ d.strftime('%Y-%m-%d') }}&time={{ label }}&employee_id={{ e.id }}"
                             hx-target="#modal" hx-swap="innerHTML">
                             <div class="flex items-center justify-between">
-                              <div class="flex items-center gap-2">
-                                <span class="w-2 h-2 rounded-full {{ dot }}"></span>
-                                <span class="font-semibold text-gray-800">{{ e.name }}</span>
-                              </div>
-                              <span class="text-[10px] uppercase tracking-wide text-gray-500">BOŞ</span>
+                              <span class="font-semibold">{{ e.name }}</span>
+                              <span class="text-xs">BOŞ</span>
                             </div>
-                            <div class="text-xs text-gray-500 mt-1">Randevu ekle</div>
+                            <div class="text-xs text-gray-500">Randevu ekle</div>
                           </button>
                         {% endif %}
                       {% endfor %}
@@ -407,64 +396,62 @@ INDEX_HTML = r"""
           {% endfor %}
         </tbody>
       </table>
-    </section>
-  </main>
+    </div>
+  </div>
 
   <div id="modal"></div>
+
+  <template id="modal-shell">
+    <div class="fixed inset-0 bg-black/40 flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me"></div>
+  </template>
 </body>
 </html>
 """
 
 SLOT_HTML = r"""
-<div class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me">
-  <div class="bg-white/95 w-full max-w-md rounded-2xl shadow-2xl ring-1 ring-black/5 p-5"
-       _="on keydown[key=='Escape'] from window halt event then remove closest .fixed">
+<div class="fixed inset-0 bg-black/40 flex items-center justify-center p-3" _="on click if event.target.matches('.fixed') then remove me">
+  <div class="bg-white w-full max-w-md rounded-xl shadow p-4" _="on keydown[key=='Escape'] from window halt event then remove closest .fixed">
     {% if appt %}
-      <h2 class="text-lg font-semibold mb-3">Randevu Detayı</h2>
-      <dl class="text-sm grid grid-cols-3 gap-2 mb-4">
+      <h2 class="text-lg font-semibold mb-2">Randevu Detayı</h2>
+      <dl class="text-sm grid grid-cols-3 gap-2 mb-3">
         <dt class="text-gray-500">Çalışan</dt><dd class="col-span-2">{{ appt.employee.name }}</dd>
         <dt class="text-gray-500">Tarih/Saat</dt><dd class="col-span-2">{{ appt.start_time.strftime('%d.%m.%Y %H:%M') }}</dd>
         <dt class="text-gray-500">Müşteri</dt><dd class="col-span-2">{{ appt.customer_name }}</dd>
         <dt class="text-gray-500">Telefon</dt><dd class="col-span-2">{{ appt.phone or '-' }}</dd>
-        <dt class="text-gray-500">Hizmet</dt>
-        <dd class="col-span-2">
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-rose-100 text-rose-700 border border-rose-200">
-            {{ appt.service }}
-          </span>
-        </dd>
+        <dt class="text-gray-500">Hizmet</dt><dd class="col-span-2">{{ appt.service }}</dd>
       </dl>
       <div class="flex justify-end gap-2">
-        <button class="px-3 py-2 rounded-xl border hover:bg-gray-50" onclick="this.closest('.fixed').remove()">Kapat</button>
+        <button class="px-3 py-2 rounded border" onclick="this.closest('.fixed').remove()">Kapat</button>
         <form hx-post="/appointments/{{ appt.id }}/delete" hx-target="body" hx-swap="none">
-          <button class="px-3 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 shadow-sm">Sil</button>
+          <button class="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700">Sil</button>
         </form>
       </div>
     {% else %}
-      <h2 class="text-lg font-semibold mb-3">Yeni Randevu</h2>
+      <h2 class="text-lg font-semibold mb-2">Yeni Randevu</h2>
       <form class="space-y-3" hx-post="/appointments" hx-target="body" hx-swap="none">
         <input type="hidden" name="employee_id" value="{{ emp.id }}" />
         <input type="hidden" name="date" value="{{ dt.strftime('%Y-%m-%d') }}" />
         <input type="hidden" name="time" value="{{ dt.strftime('%H:%M') }}" />
         <div class="text-sm text-gray-600">{{ emp.name }} – {{ dt.strftime('%d.%m.%Y %H:%M') }}</div>
         <div>
-          <label class="block text-sm font-medium mb-1">Müşteri Adı Soyadı</label>
-          <input required name="customer_name" class="w-full p-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-rose-300" placeholder="Ad Soyad" />
+          <label class="block text-sm font-medium">Müşteri Adı Soyadı</label>
+          <input required name="customer_name" class="mt-1 w-full p-2 rounded border" placeholder="Ad Soyad" />
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Telefon (WhatsApp)</label>
-          <input name="phone" class="w-full p-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-rose-300" placeholder="+905331112233" />
+          <label class="block text-sm font-medium">Telefon (WhatsApp)</label>
+          <input name="phone" class="mt-1 w-full p-2 rounded border" placeholder="+905331112233" />
           <p class="text-xs text-gray-500 mt-1">E.164 formatı önerilir. Mesajlar randevudan 60 dk önce gönderilir.</p>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Hizmet</label>
-          <select required name="service" class="w-full p-2.5 rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-300">
+          <label class="block text-sm font-medium">Hizmet</label>
+          <select required name="service" class="mt-1 w-full p-2 rounded border bg-white">
             <option value="" disabled selected>Seçiniz</option>
             {% for s in services %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
           </select>
         </div>
         <div class="flex justify-end gap-2 pt-2">
-          <button type="button" class="px-3 py-2 rounded-xl border hover:bg-gray-50" onclick="this.closest('.fixed').remove()">Vazgeç</button>
-          <button class="px-3 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-fuchsia-600 text-white hover:opacity-95 shadow-sm">Kaydet</button>
+          <button type="button" class="px-3 py-2 rounded border" onclick="this.closest('.fixed').remove()">Vazgeç</button>
+          <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Kaydet</button>
         </div>
       </form>
     {% endif %}
@@ -473,5 +460,4 @@ SLOT_HTML = r"""
 """
 
 if __name__ == "__main__":
-    # Yerelde: python app.py
     app.run(host="0.0.0.0", port=8000, debug=True)
