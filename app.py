@@ -2,8 +2,7 @@ import os
 from datetime import datetime, date, time, timedelta
 from dataclasses import dataclass
 
-from flask import Flask, request, redirect, url_for, make_response
-from flask import render_template_string, abort
+from flask import Flask, request, url_for, make_response, render_template_string, abort
 from sqlalchemy import (create_engine, Column, Integer, String, DateTime, Boolean,
                         ForeignKey, UniqueConstraint)
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, scoped_session
@@ -60,7 +59,7 @@ class Appointment(Base):
 
 Base.metadata.create_all(engine)
 
-# Seed employees
+# İlk çalışanları ekle (varsa atla)
 with Session() as s:
     existing = {e.name for e in s.query(Employee).all()}
     for n in EMPLOYEE_NAMES:
@@ -68,7 +67,7 @@ with Session() as s:
             s.add(Employee(name=n))
     s.commit()
 
-# -------------------- WhatsApp --------------------
+# -------------------- WhatsApp (opsiyonel; ayar yoksa pasif) --------------------
 TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM = os.getenv("TWILIO_WHATSAPP_FROM")  # örn: whatsapp:+14155238886
@@ -77,6 +76,11 @@ client = Client(TWILIO_SID, TWILIO_TOKEN) if TWILIO_ENABLED else None
 
 # -------------------- Flask --------------------
 app = Flask(__name__)
+
+# Basit sağlık kontrolü (Render’da canlı mı?)
+@app.get("/healthz")
+def healthz():
+    return "ok", 200
 
 # -------------------- Yardımcılar --------------------
 TR_DAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
@@ -87,33 +91,25 @@ class Slot:
     label: str  # "HH:MM"
 
 def week_start_for(d: date) -> date:
-    # Haftabaşı: Pazartesi
-    return d - timedelta(days=(d.weekday()))
+    return d - timedelta(days=(d.weekday()))  # Pazartesi
 
 def parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
-
-def time_to_dt(day: date, t: time) -> datetime:
-    return TZ.localize(datetime.combine(day, t))
 
 def iter_slots_for_day(day: date) -> list[Slot]:
     """09:00'dan 19:30'a kadar 60 dk slotlar; son özel slot 18:30-19:30."""
     slots = []
     cur = datetime.combine(day, START_TIME)
     end_dt = datetime.combine(day, END_TIME)
-    # 60 dakikalık adımlarla 18:00'a kadar ilerle
     while cur + timedelta(minutes=SLOT_MINUTES) <= end_dt:
         slots.append(Slot(dt=TZ.localize(cur), label=cur.strftime("%H:%M")))
         cur += timedelta(minutes=SLOT_MINUTES)
-    # Özel: 18:30 slotu (eğer henüz eklenmediyse ve gün cumartesi/haftaiçi ise)
     special = datetime.combine(day, time(18, 30))
     special_dt = TZ.localize(special)
     if all(s.dt.time() != time(18,30) for s in slots) and special_dt + timedelta(minutes=60) <= TZ.localize(end_dt):
-        # Pazar hariç günler için ekle
-        if day.weekday() != 6:
+        if day.weekday() != 6:  # Pazar hariç
             slots.append(Slot(dt=special_dt, label=special.strftime("%H:%M")))
-    # Pazar (kapalı): slot listesi boş kalsın
-    if day.weekday() == 6:
+    if day.weekday() == 6:     # Pazar kapalı
         return []
     return slots
 
@@ -123,9 +119,8 @@ def week_days(start: date) -> list[date]:
 def fetch_week_appointments(ses, week_days_list: list[date]):
     start_dt = TZ.localize(datetime.combine(week_days_list[0], time(0,0)))
     end_dt = TZ.localize(datetime.combine(week_days_list[-1], time(23,59)))
-    items = ses.query(Appointment).filter(Appointment.start_time >= start_dt,
+    return ses.query(Appointment).filter(Appointment.start_time >= start_dt,
                                          Appointment.start_time <= end_dt).all()
-    return items
 
 def appt_key(emp_id: int, dt: datetime) -> tuple:
     return (emp_id, dt.strftime("%Y-%m-%d %H:%M"))
@@ -136,18 +131,13 @@ def index():
     with Session() as s:
         today = datetime.now(TZ).date()
         ws_param = request.args.get("week_start")
-        if ws_param:
-            ws = parse_date(ws_param)
-        else:
-            ws = week_start_for(today)
+        ws = parse_date(ws_param) if ws_param else week_start_for(today)
         days = week_days(ws)
         employees = s.query(Employee).order_by(Employee.id).all()
 
-        # Tüm randevuları map'le
+        # Haftanın randevuları
         appointments = fetch_week_appointments(s, days)
-        appt_map = {}
-        for a in appointments:
-            appt_map[appt_key(a.employee_id, a.start_time)] = a
+        appt_map = {appt_key(a.employee_id, a.start_time): a for a in appointments}
 
         # Slot matrisi
         day_slots = {d: iter_slots_for_day(d) for d in days}
@@ -178,7 +168,6 @@ def slot_modal():
         abort(400)
     day = parse_date(date_str)
     dt = TZ.localize(datetime.combine(day, datetime.strptime(time_str, "%H:%M").time()))
-
     with Session() as s:
         emp = s.get(Employee, emp_id)
         if not emp:
@@ -229,7 +218,7 @@ def create_appointment():
         s.add(appt)
         s.commit()
 
-    # HX-Redirect ile sayfayı aynı haftaya tazele
+    # Aynı haftayı tazele
     ws = week_start_for(day).strftime("%Y-%m-%d")
     resp = make_response("", 204)
     resp.headers["HX-Redirect"] = url_for("index", week_start=ws)
@@ -249,10 +238,9 @@ def delete_appointment(appt_id: int):
     resp.headers["HX-Redirect"] = url_for("index", week_start=ws)
     return resp
 
-# -------------------- Scheduler --------------------
+# -------------------- (Opsiyonel) Zamanlayıcı: Twilio kuruluysa çalışır --------------------
 def send_whatsapp_reminders():
     if not TWILIO_ENABLED:
-        # Kurulum yapılmadıysa sessizce çık (geliştirme için konsola yazılabilir)
         return
     now = datetime.now(TZ)
     window_start = now + timedelta(minutes=60)
@@ -267,12 +255,10 @@ def send_whatsapp_reminders():
         )
         for a in upcoming:
             if not a.phone:
-                a.reminder_sent = True  # numara yoksa atla ama tekrar denememek için işaretle
+                a.reminder_sent = True
                 continue
             try:
-                to = a.phone
-                if not to.startswith("whatsapp:"):
-                    to = f"whatsapp:{to}"
+                to = a.phone if str(a.phone).startswith("whatsapp:") else f"whatsapp:{a.phone}"
                 body = (
                     f"Merhaba {a.customer_name},\n"
                     f"{a.start_time.strftime('%d.%m.%Y %H:%M')} saatindeki '{a.service}' randevunuzu hatırlatırız.\n"
@@ -281,7 +267,6 @@ def send_whatsapp_reminders():
                 client.messages.create(from_=TWILIO_FROM, to=to, body=body)
                 a.reminder_sent = True
             except Exception as e:
-                # Hata olursa tekrar denemek için işaretlemeyi kaldırma (log atılabilir)
                 print("WhatsApp gönderim hatası:", e)
         s.commit()
 
@@ -315,7 +300,7 @@ INDEX_HTML = r"""
           </p>
         </div>
         <nav class="flex items-center gap-2">
-          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg白/25 border border-white/20 backdrop-blur transition"
+          <a class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur transition"
              href="?week_start={{ prev_w }}">◀ Önceki</a>
           <a class="px-3 py-2 rounded-xl bg-white text-rose-700 font-semibold hover:bg-rose-50 border border-white/0 transition"
              href="?week_start={{ this_w }}">Bugün</a>
@@ -329,6 +314,7 @@ INDEX_HTML = r"""
   <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
     {% set emp_colors = ['bg-rose-500','bg-violet-500','bg-emerald-500','bg-amber-500'] %}
 
+    <!-- Üst bilgi kartı -->
     <section class="bg-white/80 backdrop-blur rounded-2xl shadow-lg ring-1 ring-black/5 p-4">
       <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div class="text-sm text-gray-700 flex items-center gap-3">
@@ -347,6 +333,7 @@ INDEX_HTML = r"""
       </div>
     </section>
 
+    <!-- Takvim -->
     <section class="bg-white rounded-2xl shadow-xl ring-1 ring-black/5 overflow-x-auto">
       <table class="min-w-full text-sm">
         <thead class="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
@@ -486,4 +473,5 @@ SLOT_HTML = r"""
 """
 
 if __name__ == "__main__":
+    # Yerelde: python app.py
     app.run(host="0.0.0.0", port=8000, debug=True)
